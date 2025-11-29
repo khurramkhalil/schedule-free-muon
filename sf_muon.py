@@ -18,7 +18,7 @@ import math
 
 try:
     from triton_utils import quintic_newton_schulz_compiled
-    HAS_TRITON = True
+    HAS_TRITON = False # Temporarily disabled for debugging
 except ImportError:
     HAS_TRITON = False
 
