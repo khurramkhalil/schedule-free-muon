@@ -82,10 +82,9 @@ def quintic_newton_schulz(G, steps=5, eps=1e-7):
     
     # Pre-conditioning: Scale to ensure convergence
     # Newton-Schulz converges if spectral norm ||X||_2 < sqrt(3)
-    # We scale Frobenius norm to sqrt(rows), which implies spectral norm approx 1
-    # This places us in the basin of attraction for the fixed point at 1
+    # Using Frobenius norm as conservative upper bound ensures stability
     norm = X.norm(p='fro') + eps
-    X = X.div(norm).mul_(math.sqrt(X.size(0)))
+    X = X.div(norm)
     
     # Quintic iteration
     for _ in range(steps):
@@ -109,8 +108,9 @@ def quintic_newton_schulz(G, steps=5, eps=1e-7):
     # Post-conditioning: Re-normalize to ensure we don't shrink
     # The coefficients sum to ~0.7, so we lose scale.
     # We force the Frobenius norm back to sqrt(N) (spectral norm ~ 1)
-    norm = X.norm(p='fro') + eps
-    X = X.div(norm).mul_(math.sqrt(X.size(0)))
+    current_norm = X.norm(p='fro') + eps
+    target_norm = math.sqrt(X.size(0))
+    X = X.mul(target_norm / current_norm)
     
     # Restore orientation if transposed
     if transpose_needed:
