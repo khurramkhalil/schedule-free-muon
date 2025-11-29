@@ -2,3 +2,4 @@ torch
 matplotlib
 numpy
 triton
+tiktoken
