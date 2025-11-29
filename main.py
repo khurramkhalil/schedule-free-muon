@@ -20,6 +20,9 @@ def test_manifold(args):
         print("❌ Manifold Test Failed")
         return False
 
+# Enable TF32 for faster matrix multiplications on Ampere+ GPUs
+torch.set_float32_matmul_precision('high')
+
 def run_benchmark(name, optimizer, model, data, steps=50, warmup=10):
     device = data.device
     

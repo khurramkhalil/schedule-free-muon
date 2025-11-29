@@ -53,7 +53,7 @@ def newton_schulz_kernel(
 
 # Optimized PyTorch implementation using torch.compile
 # This is often "good enough" and much safer than raw Triton for matmuls.
-@torch.compile
+@torch.compile(mode='max-autotune')
 def quintic_newton_schulz_compiled(X, steps=5, eps=1e-7):
     # Coefficients
     a, b, c = 1.875, -1.25, 0.375
