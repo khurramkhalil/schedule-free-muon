@@ -9,11 +9,12 @@ class ModelConfig:
     n_head: int = 12
     dropout: float = 0.1
     bias: bool = False      # True: bias in Linears and LayerNorms, like GPT-2. False: a bit better and faster
+    block_size: int = 1024  # Context length
 
 @dataclass
 class TrainConfig:
     batch_size: int = 12
-    block_size: int = 1024  # Context length
+    # block_size moved to ModelConfig
     max_steps: int = 1000   # Short run for validation
     learning_rate: float = 6e-4
     weight_decay: float = 1e-1

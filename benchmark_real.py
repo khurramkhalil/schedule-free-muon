@@ -14,8 +14,8 @@ def run_experiment():
     print(f"Device: {t_conf.device}")
     
     # Data
-    train_loader = get_data(t_conf.block_size, t_conf.batch_size, t_conf.device, split='train')
-    val_loader = get_data(t_conf.block_size, t_conf.batch_size, t_conf.device, split='val')
+    train_loader = get_data(m_conf.block_size, t_conf.batch_size, t_conf.device, split='train')
+    val_loader = get_data(m_conf.block_size, t_conf.batch_size, t_conf.device, split='val')
     
     # --- Run 1: AdamW ---
     print("\n=== Training with AdamW ===")
