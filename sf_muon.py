@@ -57,9 +57,9 @@ def quintic_newton_schulz(G, steps=5, eps=1e-7):
     """
     # Quintic coefficients for strict orthogonality (sum=1)
     # Derived for 3rd order convergence to I: f(1)=1, f'(1)=0, f''(1)=0
-    # a, b, c = 1.875, -1.25, 0.375        # Strict (converges to I)
-    a, b, c = 3.4445, -4.7750, 2.0315  # Original Muon (approximate, scales to ~0.8)
-    
+    a, b, c = 1.875, -1.25, 0.375        # Strict (converges to I)
+    # a, b, c = 3.4445, -4.7750, 2.0315  # Original Muon (approximate, scales to ~0.8)
+
     # Handle multi-dimensional tensors (e.g., Conv2D kernels)
     original_shape = G.shape
     original_dtype = G.dtype
@@ -107,9 +107,9 @@ def quintic_newton_schulz(G, steps=5, eps=1e-7):
         
     # Post-conditioning: Re-normalize to ensure we don't shrink
     # We force the Frobenius norm back to sqrt(N) (spectral norm ~ 1)
-    current_norm = X.norm(p='fro') + eps
-    target_norm = math.sqrt(X.size(0))
-    X = X.mul(target_norm / current_norm)
+    # current_norm = X.norm(p='fro') + eps
+    # target_norm = math.sqrt(X.size(0))
+    # X = X.mul(target_norm / current_norm)
     
     # Restore orientation if transposed
     if transpose_needed:
@@ -376,6 +376,6 @@ class ScheduleFreeMuon(optim.Optimizer):
                     state = self.state[p]
                     if 'y' in state:
                         # High-precision projection (10 steps vs 1 during training)
-                        state['y'] = quintic_newton_schulz(state['y'], steps=10)
+                        state['y'] = quintic_newton_schulz(state['y'], steps=20)
                         # Load projected weights into model
                         p.data.copy_(state['y'])

@@ -257,9 +257,9 @@ def run_comparison_test():
         
         # Train for 100 steps (quick test)
         W_target = torch.linalg.qr(torch.randn(dim, dim, device=device))[0]
-        optimizer = ScheduleFreeMuon(model.parameters(), lr=0.05)
+        optimizer = ScheduleFreeMuon(model.parameters(), lr=0.02)
         
-        for _ in range(100):
+        for _ in range(200):
             optimizer.zero_grad()
             x = torch.randn(64, dim, device=device)
             y_true = x @ W_target.T
