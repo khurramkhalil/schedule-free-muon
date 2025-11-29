@@ -16,6 +16,12 @@ import torch
 import torch.optim as optim
 import math
 
+try:
+    from triton_utils import quintic_newton_schulz_compiled
+    HAS_TRITON = True
+except ImportError:
+    HAS_TRITON = False
+
 
 def quintic_newton_schulz(G, steps=5, eps=1e-7):
     """
@@ -260,7 +266,10 @@ class ScheduleFreeMuon(optim.Optimizer):
                     
                     # Orthogonalize gradient (spectral preconditioning)
                     # This is the core Muon innovation
-                    g_ortho = quintic_newton_schulz(grad, steps=5)
+                    if HAS_TRITON and grad.device.type == 'cuda':
+                        g_ortho = quintic_newton_schulz_compiled(grad, steps=5)
+                    else:
+                        g_ortho = quintic_newton_schulz(grad, steps=5)
                     
                     # Update anchor z with orthogonal gradient
                     # Note: z drifts in ambient Euclidean space

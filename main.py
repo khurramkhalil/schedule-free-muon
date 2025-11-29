@@ -3,6 +3,9 @@ import time
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+import statistics
+import math
+import copy
 from sf_muon import ScheduleFreeMuon
 from stress_test_manifold import run_stress_test
 
@@ -17,18 +20,81 @@ def test_manifold(args):
         print("❌ Manifold Test Failed")
         return False
 
+def run_benchmark(name, optimizer, model, data, steps=50, warmup=10):
+    device = data.device
+    
+    # Warmup
+    print(f"  Warmup ({warmup} steps)...")
+    for _ in range(warmup):
+        optimizer.zero_grad()
+        out = model(data)
+        loss = out.mean()
+        loss.backward()
+        optimizer.step()
+        
+    if device.type == 'cuda':
+        torch.cuda.empty_cache()
+        torch.cuda.reset_peak_memory_stats()
+        torch.cuda.synchronize()
+    
+    times = []
+    start_event = torch.cuda.Event(enable_timing=True) if device.type == 'cuda' else None
+    end_event = torch.cuda.Event(enable_timing=True) if device.type == 'cuda' else None
+    
+    print(f"  Benchmarking ({steps} steps)...")
+    for _ in range(steps):
+        optimizer.zero_grad()
+        
+        if device.type == 'cuda':
+            torch.cuda.synchronize()
+            start_event.record()
+            start_cpu = time.perf_counter()
+        else:
+            start_cpu = time.perf_counter()
+            
+        out = model(data)
+        loss = out.mean()
+        loss.backward()
+        optimizer.step()
+        
+        if device.type == 'cuda':
+            end_event.record()
+            torch.cuda.synchronize()
+            elapsed = start_event.elapsed_time(end_event) / 1000.0 # ms to seconds
+        else:
+            elapsed = time.perf_counter() - start_cpu
+            
+        times.append(elapsed)
+        
+    max_memory = torch.cuda.max_memory_allocated() / (1024**2) if device.type == 'cuda' else 0
+    
+    avg_time = statistics.mean(times)
+    std_time = statistics.stdev(times) if len(times) > 1 else 0
+    throughput = (data.size(0) * data.size(1)) / avg_time # tokens/sec
+    
+    return {
+        'name': name,
+        'avg_time': avg_time,
+        'std_time': std_time,
+        'throughput': throughput,
+        'memory': max_memory
+    }
+
 def test_cost(args):
     """Benchmark computational cost vs AdamW."""
     print("\n" + "="*60)
-    print(" COMPUTATIONAL COST BENCHMARK")
+    print(" COMPUTATIONAL COST BENCHMARK (Publication Quality)")
     print("="*60)
     
-    device = args.device
-    if device == 'cuda' and not torch.cuda.is_available():
-        device = 'cpu'
+    device = torch.device(args.device)
+    if device.type == 'cuda' and not torch.cuda.is_available():
+        print("⚠️ CUDA not available, falling back to CPU")
+        device = torch.device('cpu')
+    
+    print(f"Device: {device}")
     
     # Setup: 6-layer Transformer Encoder
-    d_model = 512
+    d_model = 1024 # Increased for more realistic load
     model = nn.TransformerEncoder(
         nn.TransformerEncoderLayer(d_model=d_model, nhead=8, batch_first=True),
         num_layers=6
@@ -38,49 +104,36 @@ def test_cost(args):
     seq_len = 128
     data = torch.randn(batch_size, seq_len, d_model, device=device)
     
-    optimizers = {
-        'AdamW': torch.optim.AdamW(model.parameters(), lr=1e-3),
-        'SF-Muon': ScheduleFreeMuon(model.parameters(), lr=0.02)
-    }
+    optimizers = [
+        ('AdamW', lambda p: torch.optim.AdamW(p, lr=1e-3)),
+        ('SF-Muon', lambda p: ScheduleFreeMuon(p, lr=0.02))
+    ]
     
-    results = {}
+    results = []
     
-    for name, opt in optimizers.items():
+    for name, opt_fn in optimizers:
         print(f"\nBenchmarking {name}...")
+        # Re-init model/optimizer to ensure fair comparison
+        model_copy = copy.deepcopy(model)
+        opt = opt_fn(model_copy.parameters())
         
-        # Warmup
-        for _ in range(10):
-            opt.zero_grad()
-            out = model(data)
-            loss = out.mean()
-            loss.backward()
-            opt.step()
+        res = run_benchmark(name, opt, model_copy, data)
+        results.append(res)
         
-        # Timing
-        start_time = time.time()
-        steps = 10
-        for _ in range(steps):
-            opt.zero_grad()
-            out = model(data)
-            loss = out.mean()
-            loss.backward()
-            opt.step()
-            if device == 'cuda':
-                torch.cuda.synchronize()
-        
-        end_time = time.time()
-        duration = end_time - start_time
-        steps_per_sec = steps / duration
-        results[name] = steps_per_sec
-        print(f"  Speed: {steps_per_sec:.2f} steps/sec")
+        print(f"  Time: {res['avg_time']*1000:.2f} ± {res['std_time']*1000:.2f} ms/step")
+        print(f"  Throughput: {res['throughput']:.0f} tokens/sec")
+        if device.type == 'cuda':
+            print(f"  Peak Memory: {res['memory']:.2f} MB")
     
-    print("\nSummary:")
-    base_speed = results['AdamW']
-    muon_speed = results['SF-Muon']
-    slowdown = base_speed / muon_speed
-    print(f"  AdamW:   {base_speed:.2f} steps/sec")
-    print(f"  SF-Muon: {muon_speed:.2f} steps/sec")
-    print(f"  Slowdown: {slowdown:.2f}x")
+    print("\n" + "="*60)
+    print(f"{'Optimizer':<15} {'Time (ms)':<15} {'Throughput':<15} {'Slowdown':<10}")
+    print("-" * 60)
+    
+    base_time = results[0]['avg_time']
+    for res in results:
+        slowdown = res['avg_time'] / base_time
+        print(f"{res['name']:<15} {res['avg_time']*1000:<15.2f} {res['throughput']:<15.0f} {slowdown:<10.2f}x")
+    print("="*60 + "\n")
 
 def test_convergence(args):
     """Simple convergence test on a synthetic task."""
