@@ -64,7 +64,8 @@ def quintic_newton_schulz_compiled(X, steps=5, eps=1e-7):
         transposed = True
         
     # Coefficients
-    a, b, c = 1.875, -1.25, 0.375
+    # a, b, c = 1.875, -1.25, 0.375
+    a, b, c = 3.4445, -4.7750, 2.0315
     
     # Pre-conditioning (Frobenius norm)
     # We can fuse the norm calculation and division if we really want, 
