@@ -306,12 +306,12 @@ class ScheduleFreeMuon(optim.Optimizer):
                         
                     z.add_(g_ortho, alpha=-lr * scale)
                     
-                # Periodic anchor stabilization (drift correction)
-                # Prevents z from wandering too far from manifold
-                if state['step'] % 10 == 0:
-                    z.copy_(quintic_newton_schulz(z, steps=1))
-                    # Also project y to prevent shrinkage from averaging
-                    y.copy_(quintic_newton_schulz(y, steps=1))
+                    # Periodic anchor stabilization (drift correction)
+                    # Prevents z from wandering too far from manifold
+                    if state['step'] % 10 == 0:
+                        z.copy_(quintic_newton_schulz(z, steps=1))
+                        # Also project y to prevent shrinkage from averaging
+                        y.copy_(quintic_newton_schulz(y, steps=1))
                 
                 # ============================================================
                 # MERGE: SCHEDULE-FREE AVERAGING
