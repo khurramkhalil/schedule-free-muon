@@ -55,6 +55,14 @@ def newton_schulz_kernel(
 # This is often "good enough" and much safer than raw Triton for matmuls.
 @torch.compile(mode='max-autotune')
 def quintic_newton_schulz_compiled(X, steps=5, eps=1e-7):
+    # Ensure we work on the smaller dimension for efficiency
+    # If X is (M, N) and M > N, we transpose to (N, M)
+    # This ensures the Gramian X @ X.T is (N, N) instead of (M, M)
+    transposed = False
+    if X.size(-2) > X.size(-1):
+        X = X.transpose(-2, -1)
+        transposed = True
+        
     # Coefficients
     a, b, c = 1.875, -1.25, 0.375
     
@@ -74,5 +82,8 @@ def quintic_newton_schulz_compiled(X, steps=5, eps=1e-7):
         
         # X = a * X + B @ X
         X = a * X + torch.mm(B, X)
+        
+    if transposed:
+        X = X.transpose(-2, -1)
         
     return X
