@@ -220,6 +220,11 @@ class ScheduleFreeMuon(optim.Optimizer):
             # Gradually shifts from averaged (y) to anchor (z)
             sched = min(1.0, (k + 1) / warmup_steps)
             
+            # Apply LR warmup to the step size as well
+            # This allows using higher peak LR without instability at start
+            lr_scale = min(1.0, (k + 1) / warmup_steps)
+            current_lr = lr * lr_scale
+            
             for p in group['params']:
                 if p.grad is None:
                     continue
@@ -262,7 +267,7 @@ class ScheduleFreeMuon(optim.Optimizer):
                     denom = exp_avg_sq.sqrt().add_(1e-8)
                     bias_correction1 = 1 - beta1 ** (k + 1)
                     bias_correction2 = 1 - beta2 ** (k + 1)
-                    step_size = lr * math.sqrt(bias_correction2) / bias_correction1
+                    step_size = current_lr * math.sqrt(bias_correction2) / bias_correction1
                     
                     # Update anchor z
                     z.addcdiv_(exp_avg, denom, value=-step_size)
@@ -278,10 +283,11 @@ class ScheduleFreeMuon(optim.Optimizer):
                 else:
                     momentum = group['momentum']
                     
-                    # Decoupled weight decay (applied to anchor z)
-                    # Shrinks z towards origin before gradient step
+                    # Coupled Weight Decay (L2 Regularization)
+                    # Add to gradient so it gets orthogonalized with the update
+                    # This ensures the entire update step is spectral
                     if weight_decay != 0:
-                        z.mul_(1 - lr * weight_decay)
+                        grad.add_(z, alpha=weight_decay)
                     
                     # Muon Momentum: v_{t+1} = mu * v_t + g_t
                     if 'momentum_buffer' not in state:
@@ -304,7 +310,7 @@ class ScheduleFreeMuon(optim.Optimizer):
                     else:
                         scale = 1.0
                         
-                    z.add_(g_ortho, alpha=-lr * scale)
+                    z.add_(g_ortho, alpha=-current_lr * scale)
                     
                     # Periodic anchor stabilization (drift correction)
                     # Prevents z from wandering too far from manifold
