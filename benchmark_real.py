@@ -48,13 +48,11 @@ def run_experiment():
     # Create groups
     # Note: SF-Muon handles weight decay internally, but we can pass it per group
     optim_groups = [
-        {'params': muon_params, 'use_muon': True, 'lr': 0.01, 'weight_decay': 0.01},
-        {'params': adam_params, 'use_muon': False, 'lr': 0.002, 'weight_decay': 0.0} # Lower LR for Adam part? Or same?
-        # Usually AdamW part needs standard LR (e.g. 6e-4 or 1e-3). 0.02 is too high for AdamW.
-        # Let's use 0.002 for AdamW part as a heuristic, or the config LR (6e-4)
+        {'params': muon_params, 'use_muon': True, 'lr': 0.05, 'weight_decay': 0.01},
+        {'params': adam_params, 'use_muon': False, 'lr': 0.001, 'weight_decay': 0.0}
     ]
-    # Actually, let's use the config LR for the AdamW part (6e-4) and 0.02 for Muon part
-    optim_groups[1]['lr'] = t_conf.learning_rate 
+    # Use explicit LR for AdamW part instead of config override
+    # optim_groups[1]['lr'] = t_conf.learning_rate 
     
     optimizer = ScheduleFreeMuon(optim_groups)
     
