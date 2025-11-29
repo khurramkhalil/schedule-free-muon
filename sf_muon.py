@@ -57,8 +57,8 @@ def quintic_newton_schulz(G, steps=5, eps=1e-7):
     """
     # Quintic coefficients for strict orthogonality (sum=1)
     # Derived for 3rd order convergence to I: f(1)=1, f'(1)=0, f''(1)=0
-    # a, b, c = 1.875, -1.25, 0.375        # Strict (converges to I)
-    a, b, c = 3.4445, -4.7750, 2.0315  # Original Muon (approximate, scales to ~0.8)
+    # a, b, c = 3.4445, -4.7750, 2.0315  # Original Muon (approximate, scales to ~0.8)
+    a, b, c = 1.875, -1.25, 0.375        # Strict (converges to I)
     
     # Handle multi-dimensional tensors (e.g., Conv2D kernels)
     original_shape = G.shape
@@ -78,9 +78,10 @@ def quintic_newton_schulz(G, steps=5, eps=1e-7):
     
     # Pre-conditioning: Scale to ensure convergence
     # Newton-Schulz converges if spectral norm ||X||_2 < sqrt(3)
-    # Using Frobenius norm as conservative upper bound ensures stability
+    # We scale Frobenius norm to sqrt(rows), which implies spectral norm approx 1
+    # This places us in the basin of attraction for the fixed point at 1
     norm = X.norm(p='fro') + eps
-    X = X.div(norm)
+    X = X.div(norm).mul_(math.sqrt(X.size(0)))
     
     # Quintic iteration
     for _ in range(steps):

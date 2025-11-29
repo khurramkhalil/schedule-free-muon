@@ -64,14 +64,13 @@ def quintic_newton_schulz_compiled(X, steps=5, eps=1e-7):
         transposed = True
         
     # Coefficients
-    # a, b, c = 1.875, -1.25, 0.375
-    a, b, c = 3.4445, -4.7750, 2.0315
+    a, b, c = 1.875, -1.25, 0.375
+    # a, b, c = 3.4445, -4.7750, 2.0315
     
     # Pre-conditioning (Frobenius norm)
-    # We can fuse the norm calculation and division if we really want, 
-    # but torch.compile handles this well.
+    # Scale to sqrt(rows) to target spectral norm ~ 1
     norm = X.norm(p='fro') + eps
-    X = X / norm
+    X = X / norm * math.sqrt(X.size(0))
     
     for _ in range(steps):
         # A = X @ X.T
