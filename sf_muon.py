@@ -166,7 +166,7 @@ class ScheduleFreeMuon(optim.Optimizer):
         - Jordan et al. (2024): "Muon Optimizer"
     """
     
-    def __init__(self, params, lr=0.02, betas=(0.9, 0.999), 
+    def __init__(self, params, lr=0.02, betas=(0.9, 0.999), momentum=0.95,
                  weight_decay=0.01, warmup_steps=1000):
         if lr < 0.0:
             raise ValueError(f"Invalid learning rate: {lr}")
@@ -180,6 +180,7 @@ class ScheduleFreeMuon(optim.Optimizer):
         defaults = dict(
             lr=lr, 
             betas=betas, 
+            momentum=momentum,
             weight_decay=weight_decay,
             warmup_steps=warmup_steps, 
             k=0  # Global step counter
@@ -269,20 +270,33 @@ class ScheduleFreeMuon(optim.Optimizer):
                 # BRANCH 2: MATRIX PARAMETERS (Linear, Conv2D)
                 # Use Muon (Stiefel manifold)
                 # ============================================================
+                # ============================================================
+                # BRANCH 2: MATRIX PARAMETERS (Linear, Conv2D)
+                # Use Muon (Stiefel manifold)
+                # ============================================================
                 else:
+                    momentum = group['momentum']
+                    
                     # Decoupled weight decay (applied to anchor z)
                     # Shrinks z towards origin before gradient step
                     if weight_decay != 0:
                         z.mul_(1 - lr * weight_decay)
                     
-                    # Orthogonalize gradient (spectral preconditioning)
-                    # This is the core Muon innovation
-                    if HAS_TRITON and grad.device.type == 'cuda':
-                        g_ortho = quintic_newton_schulz_compiled(grad, steps=5)
-                    else:
-                        g_ortho = quintic_newton_schulz(grad, steps=5)
+                    # Muon Momentum: v_{t+1} = mu * v_t + g_t
+                    if 'momentum_buffer' not in state:
+                        state['momentum_buffer'] = torch.zeros_like(grad)
                     
-                    # Update anchor z with orthogonal gradient
+                    buf = state['momentum_buffer']
+                    buf.mul_(momentum).add_(grad)
+                    
+                    # Orthogonalize MOMENTUM BUFFER (spectral preconditioning)
+                    # This is the core Muon innovation: orthogonalize the accumulated direction
+                    if HAS_TRITON and grad.device.type == 'cuda':
+                        g_ortho = quintic_newton_schulz_compiled(buf, steps=5)
+                    else:
+                        g_ortho = quintic_newton_schulz(buf, steps=5)
+                    
+                    # Update anchor z with orthogonal update
                     # Note: z drifts in ambient Euclidean space
                     if grad.size(-2) > grad.size(-1): # Tall matrix
                         scale = (grad.size(-2) / grad.size(-1)) ** 0.5
