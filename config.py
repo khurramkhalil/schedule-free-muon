@@ -13,7 +13,7 @@ class ModelConfig:
 
 @dataclass
 class TrainConfig:
-    batch_size: int = 12
+    batch_size: int = 8
     # block_size moved to ModelConfig
     max_steps: int = 10000   # Short run for validation
     learning_rate: float = 6e-4

@@ -341,6 +341,9 @@ class ScheduleFreeMuon(optim.Optimizer):
                     # Use 5 steps to ensure we are firmly on the manifold
                     # 1 step might be insufficient if y has shrunk significantly
                     p.data.copy_(quintic_newton_schulz(p.data, steps=5))
+                    # Clear CUDA cache to prevent OOM
+                    if p.device.type == 'cuda':
+                        torch.cuda.empty_cache()
             
             # Increment global step counter
             group['k'] += 1
