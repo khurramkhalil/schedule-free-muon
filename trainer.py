@@ -82,6 +82,10 @@ class Trainer:
     @torch.no_grad()
     def evaluate(self):
         self.model.eval()
+        # Schedule-Free Optimizer support: switch to averaged weights
+        if hasattr(self.optimizer, 'eval'):
+            self.optimizer.eval()
+            
         losses = []
         for i, (x, y) in enumerate(self.val_loader):
             if i >= self.config.eval_iters: break
@@ -89,5 +93,10 @@ class Trainer:
             with torch.amp.autocast(device_type='cuda', dtype=torch.bfloat16) if self.device == 'cuda' else torch.no_grad():
                 logits, loss = self.model(x, y)
             losses.append(loss.item())
+            
+        # Schedule-Free Optimizer support: switch back to training weights
+        if hasattr(self.optimizer, 'train'):
+            self.optimizer.train()
+            
         self.model.train()
         return sum(losses) / len(losses)

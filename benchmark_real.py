@@ -30,10 +30,33 @@ def run_experiment():
     # --- Run 2: SF-Muon ---
     print("\n=== Training with SF-Muon ===")
     model_muon = GPT(m_conf) # Fresh init for fairness
-    # For Muon, we pass all params; the optimizer handles internal grouping/matrix detection
-    # But we should respect weight decay settings.
-    # SF-Muon handles weight decay internally.
-    optimizer = ScheduleFreeMuon(model_muon.parameters(), lr=0.02, weight_decay=0.01)
+    
+    # Separate params for Muon (Matrices) and AdamW (Vectors + Embeddings)
+    # Muon paper typically treats Embeddings as vectors (AdamW) or at least doesn't orthogonalize them
+    muon_params = []
+    adam_params = []
+    
+    for name, p in model_muon.named_parameters():
+        if p.requires_grad:
+            # Embeddings and Vectors -> AdamW
+            if p.ndim < 2 or "wte" in name or "wpe" in name or "lm_head" in name:
+                adam_params.append(p)
+            else:
+                # Linear Layers -> Muon
+                muon_params.append(p)
+                
+    # Create groups
+    # Note: SF-Muon handles weight decay internally, but we can pass it per group
+    optim_groups = [
+        {'params': muon_params, 'use_muon': True, 'lr': 0.02, 'weight_decay': 0.01},
+        {'params': adam_params, 'use_muon': False, 'lr': 0.002, 'weight_decay': 0.0} # Lower LR for Adam part? Or same?
+        # Usually AdamW part needs standard LR (e.g. 6e-4 or 1e-3). 0.02 is too high for AdamW.
+        # Let's use 0.002 for AdamW part as a heuristic, or the config LR (6e-4)
+    ]
+    # Actually, let's use the config LR for the AdamW part (6e-4) and 0.02 for Muon part
+    optim_groups[1]['lr'] = t_conf.learning_rate 
+    
+    optimizer = ScheduleFreeMuon(optim_groups)
     
     trainer_muon = Trainer(model_muon, optimizer, train_loader, val_loader, t_conf)
     trainer_muon.train('sf_muon_run')
