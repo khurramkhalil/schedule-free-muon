@@ -82,10 +82,10 @@ def quintic_newton_schulz(G, steps=5, eps=1e-7):
     
     # Pre-conditioning: Scale to ensure convergence
     # Newton-Schulz converges if spectral norm ||X||_2 < sqrt(3)
-    # We scale Frobenius norm to sqrt(N)/2 to ensure spectral norm < sqrt(3)
-    # (assuming sigma_max <= 2*sigma_avg for typical matrices)
+    # We scale Frobenius norm to 1.0 to ensure spectral norm <= 1.0 < sqrt(3)
+    # This guarantees convergence for ANY matrix structure (including Rank-1)
     norm = X.norm(p='fro') + eps
-    target_pre_norm = 0.5 * math.sqrt(X.size(0))
+    target_pre_norm = 1.0
     X = X.div(norm).mul_(target_pre_norm)
     
     # Quintic iteration

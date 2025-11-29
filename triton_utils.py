@@ -72,9 +72,9 @@ def quintic_newton_schulz_compiled(X, steps=5, eps=1e-7):
     a, b, c = 1.875, -1.25, 0.375
     
     # Pre-conditioning (Frobenius norm)
-    # Scale to sqrt(rows)/2 to target spectral norm < sqrt(3)
+    # Scale to 1.0 to target spectral norm <= 1.0 < sqrt(3)
     norm = X.norm(p='fro') + eps
-    target_pre_norm = 0.5 * math.sqrt(X.size(0))
+    target_pre_norm = 1.0
     X = X * (target_pre_norm / norm)
     
     for _ in range(steps):
