@@ -49,8 +49,8 @@ def run_experiment():
     # Note: SF-Muon handles weight decay internally, but we can pass it per group
 #    optim_groups = [
     optim_groups = [
-        {'params': muon_params, 'use_muon': True, 'lr': 0.02, 'weight_decay': 0.01, 'momentum': 0.95},
-        {'params': adam_params, 'use_muon': False, 'lr': 0.005, 'weight_decay': 0.0}
+        {'params': muon_params, 'use_muon': True, 'lr': 0.0006, 'weight_decay': 0.01, 'momentum': 0.95},
+        {'params': adam_params, 'use_muon': False, 'lr': 0.0006, 'weight_decay': 0.0}
     ]
     
     # Use explicit LR for AdamW part instead of config override
