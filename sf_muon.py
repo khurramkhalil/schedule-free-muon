@@ -72,7 +72,7 @@ def quintic_newton_schulz(G, steps=5, eps=1e-7):
     
     # Pre-conditioning: Scale to ensure convergence
     # Newton-Schulz converges if spectral norm ||X||_2 < sqrt(3)
-    # Using Frobenius norm as conservative upper bound
+    # Using Frobenius norm as conservative upper bound ensures stability
     norm = X.norm(p='fro') + eps
     X = X.div(norm)
     
@@ -273,7 +273,7 @@ class ScheduleFreeMuon(optim.Optimizer):
                     
                     # Periodic anchor stabilization (drift correction)
                     # Prevents z from wandering too far from manifold
-                    if state['step'] % 100 == 0:
+                    if state['step'] % 10 == 0:
                         z.copy_(quintic_newton_schulz(z, steps=1))
                 
                 # ============================================================

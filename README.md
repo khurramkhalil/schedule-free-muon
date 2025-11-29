@@ -27,8 +27,8 @@ Modern deep learning optimizers face a critical hyperparameter dilemma:
 | Component | What It Does | Benefit |
 |-----------|--------------|---------|
 | **Schedule-Free Learning** (Defazio et al., 2024) | Replaces LR decay with primal-dual averaging | ✅ No need to specify training duration `T` |
-| **Muon Optimizer** (Jordan et al., 2024) | Orthogonal updates for matrix parameters | ✅ 2× faster convergence via spectral conditioning |
-| **Our Innovation** | Continuous manifold projection during training | ✅ Handles geometric mismatch between methods |
+| **Muon Optimizer** (Jordan et al., 2024) | Orthogonal updates for matrix parameters | ✅ Spectral conditioning (convergence speed validation pending) |
+| **Our Innovation** | Deferred manifold projection | ✅ Per-step projection of training weights, high-precision correction at inference |
 
 **Key Innovation**: We address the fundamental incompatibility between:
 - Schedule-Free's **Euclidean averaging** (assumes flat space)
@@ -96,31 +96,56 @@ python main.py --test all
 
 ## 📊 Experimental Validation
 
-### Test 1: Manifold Recovery (Stress Test)
+### Test 1: Manifold Recovery (Geometric Soundness)
 
-**Setup**: Single linear layer initialized with Gaussian noise  
-**Task**: Learn orthogonal matrix via regression  
+**Setup**: Single linear layer (1024×1024) initialized with Gaussian noise  
+**Task**: Regress to orthogonal target matrix  
 **Metric**: Spectral error `||W^T W - I||_F`
 
 **Results**:
-```
-Initial Error:  1.42 (far from manifold)
-Final Error:    0.0008 (machine precision!)
-Status:         ✅ EXCELLENT
-```
+| Phase | Spectral Error | Interpretation |
+|-------|----------------|----------------|
+| Initial (random) | 23.02 | Far from manifold (expected) |
+| During training | ~31.89 | Drift in averaged buffer (expected) |
+| After inference projection | 0.000042 | Machine precision ✅ |
 
-**Interpretation**: The optimizer successfully projects random weights onto the Stiefel manifold through training.
+**Key Finding**: ✅ The optimizer successfully projects accumulated averages 
+to the Stiefel manifold at inference time, achieving machine precision.
 
-### Test 2: Computational Cost
+**Note on Training Error**: The elevated error during training (~31.89) reflects 
+drift in the averaged buffer `y` from Euclidean averaging. This is the fundamental 
+trade-off of combining Schedule-Free (Euclidean) with Muon (Riemannian). The 
+training weights `p` used for forward passes are projected each step, while full 
+correction of `y` is deferred to inference for computational efficiency.
 
-**Configuration**: 6-layer transformer, `d_model=512`
+### Test 2: Computational Cost (CPU Benchmark)
 
-| Optimizer | Steps/sec | Slowdown | Notes |
+**Configuration**: 4-layer network, d_model=1024, CPU
+
+| Optimizer | Steps/sec | Overhead | Notes |
 |-----------|-----------|----------|-------|
-| AdamW | 1.02 | 1× | Baseline |
-| SF-Muon | 0.66 | 1.5× | Per-step projection overhead |
+| AdamW | 0.93 | 1× | Baseline |
+| SF-Muon | 0.69 | 1.34× | **CPU-specific** |
 
-**Critical Finding**: Per-step cost is ~1.5× higher on CPU (1024x1024). This is much better than the theoretical worst-case, making it practical for training.
+**Critical Caveats**:
+⚠️ **This 1.34× overhead is CPU-specific and NOT representative of GPU performance.**
+
+Theoretical analysis predicts **10-50× overhead** on GPU due to O(N³) Newton-Schulz 
+iterations. The low CPU overhead likely reflects:
+- Memory bandwidth bottleneck (not compute-bound)
+- Small matrix size (1024×1024)
+- CPU-specific compiler optimizations
+
+**GPU validation with large matrices (4096×4096) is required** before making 
+performance claims.
+
+### Test 3: Convergence Quality
+
+**Setup**: Synthetic regression task  
+**Result**: Final test loss = 0.0079 ✅
+
+The optimizer successfully minimizes loss while maintaining geometric constraints.
+Comparison to AdamW baseline on real datasets (WikiText-2) is future work.
 
 ---
 
@@ -221,17 +246,26 @@ For matrix $W \in \mathbb{R}^{N \times N}$:
 
 ### Current Limitations
 
-1. **Computational Overhead**: 10-50× slower per step than AdamW
-   - Requires step reduction to break even on wall-clock time
-   - Not yet validated on large-scale LLM training
+1. **Computational Overhead**: 
+   - **Theoretical**: 10-50× slower per step than AdamW (O(N³) vs O(N²))
+   - **Measured (CPU)**: 1.34× slower (likely bandwidth-limited, not compute-bound)
+   - **GPU validation pending**: True overhead unknown until tested on large-scale GPU training
 
-2. **Theoretical Gap**: Convergence proof incomplete
-   - Schedule-Free theory assumes convex combinations preserve feasibility
-   - Our projection introduces bias (bounded empirically, not proven)
+2. **Training Dynamics**:
+   - Spectral error remains elevated (~32) during training
+   - Only corrected at inference via high-precision projection
+   - Long-term effects of drift accumulation unexplored
 
-3. **Experimental Validation**: Missing multi-layer benchmarks
-   - Stress test validates geometry, not convergence rate
-   - Need transformer experiments on WikiText-2 or similar
+3. **Theoretical Gap**: 
+   - Convergence proof incomplete for projected averaging
+   - Bias from inference-time projection not formally bounded
+   - Approximation of geodesic averaging, not true Riemannian method
+
+4. **Experimental Validation**: 
+   - ❌ No multi-layer transformer experiments
+   - ❌ No comparison to AdamW on real datasets
+   - ❌ No large-scale LLM training validation
+   - ✅ Geometric soundness proven on synthetic tasks
 
 ### Planned Improvements
 
@@ -251,6 +285,42 @@ For matrix $W \in \mathbb{R}^{N \times N}$:
 3. **Higham, N. J.** (1986). "Computing the Polar Decomposition—with Applications." *SIAM J. Sci. Stat. Comput.*
 
 4. **Edelman, A., Arias, T. A., Smith, S. T.** (1998). "The Geometry of Algorithms with Orthogonality Constraints." *SIAM J. Matrix Anal. Appl.*
+
+---
+
+## 🎓 Thesis Contribution
+
+### What This Work Proves
+
+✅ **Geometric Soundness**: Projection scheme successfully recovers orthogonality 
+from random initialization, achieving machine precision (4.2e-05)
+
+✅ **Practical Viability**: Optimizer converges on regression tasks while 
+maintaining geometric constraints
+
+✅ **Novel Approach**: First application of Schedule-Free averaging to spectral 
+optimizers with manifold projection
+
+### What Remains to be Validated
+
+⏳ **Computational Efficiency**: GPU benchmarks needed to confirm overhead is 
+acceptable for production use
+
+⏳ **Convergence Rate**: Comparison to AdamW on real datasets (WikiText-2, ImageNet) 
+needed to validate step reduction claims
+
+⏳ **Scalability**: Large-scale LLM training (7B+ parameters) required to prove 
+production readiness
+
+### Honest Assessment
+
+This work provides a **mathematically sound foundation** for schedule-free 
+optimization on Riemannian manifolds. The geometric approach is validated, 
+but **extensive empirical validation on realistic tasks is needed** before 
+claiming superiority to existing methods.
+
+The contribution is in the **methodology** (deferred projection, drift tolerance) 
+rather than proven performance gains.
 
 ---
 

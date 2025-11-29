@@ -103,7 +103,7 @@ def run_stress_test(dim=1024, steps=300, device='cuda'):
     print("\n[3/6] Initializing Schedule-Free Muon optimizer...")
     optimizer = ScheduleFreeMuon(
         model.parameters(),
-        lr=0.05,              # Aggressive LR for fast convergence
+        lr=0.02,              # Standard Muon LR
         weight_decay=0.01,
         warmup_steps=50
     )

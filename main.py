@@ -12,8 +12,10 @@ def test_manifold(args):
     success = run_stress_test(dim=1024, steps=300, device=args.device)
     if success:
         print("✅ Manifold Test Passed")
+        return True
     else:
         print("❌ Manifold Test Failed")
+        return False
 
 def test_cost(args):
     """Benchmark computational cost vs AdamW."""
@@ -143,9 +145,14 @@ def main():
     args = parser.parse_args()
     
     if args.test in ['all', 'manifold']:
-        test_manifold(args)
+        success = test_manifold(args)
+        if not success and args.test == 'all':
+            print("\n❌ Aborting remaining tests due to failure.")
+            return
+
     if args.test in ['all', 'cost']:
         test_cost(args)
+        
     if args.test in ['all', 'convergence']:
         test_convergence(args)
 
