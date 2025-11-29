@@ -65,8 +65,8 @@ def quintic_newton_schulz_compiled(X, steps=5, eps=1e-7):
         transposed = True
         
     # Coefficients
-    a, b, c = 1.875, -1.25, 0.375
-    # a, b, c = 3.4445, -4.7750, 2.0315
+    # a, b, c = 1.875, -1.25, 0.375
+    a, b, c = 3.4445, -4.7750, 2.0315
     
     # Pre-conditioning (Frobenius norm)
     # Scale to sqrt(rows) to target spectral norm ~ 1
@@ -83,6 +83,10 @@ def quintic_newton_schulz_compiled(X, steps=5, eps=1e-7):
         
         # X = a * X + B @ X
         X = a * X + torch.mm(B, X)
+        
+    # Post-conditioning: Re-normalize to ensure we don't shrink
+    norm = X.norm(p='fro') + eps
+    X = X / norm * math.sqrt(X.size(0))
         
     if transposed:
         X = X.transpose(-2, -1)

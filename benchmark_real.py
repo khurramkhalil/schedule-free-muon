@@ -48,7 +48,7 @@ def run_experiment():
     # Create groups
     # Note: SF-Muon handles weight decay internally, but we can pass it per group
     optim_groups = [
-        {'params': muon_params, 'use_muon': True, 'lr': 0.02, 'weight_decay': 0.01},
+        {'params': muon_params, 'use_muon': True, 'lr': 0.01, 'weight_decay': 0.01},
         {'params': adam_params, 'use_muon': False, 'lr': 0.002, 'weight_decay': 0.0} # Lower LR for Adam part? Or same?
         # Usually AdamW part needs standard LR (e.g. 6e-4 or 1e-3). 0.02 is too high for AdamW.
         # Let's use 0.002 for AdamW part as a heuristic, or the config LR (6e-4)

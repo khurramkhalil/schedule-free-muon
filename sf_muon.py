@@ -57,8 +57,8 @@ def quintic_newton_schulz(G, steps=5, eps=1e-7):
     """
     # Quintic coefficients for strict orthogonality (sum=1)
     # Derived for 3rd order convergence to I: f(1)=1, f'(1)=0, f''(1)=0
-    # a, b, c = 3.4445, -4.7750, 2.0315  # Original Muon (approximate, scales to ~0.8)
-    a, b, c = 1.875, -1.25, 0.375        # Strict (converges to I)
+    # a, b, c = 1.875, -1.25, 0.375        # Strict (converges to I)
+    a, b, c = 3.4445, -4.7750, 2.0315  # Original Muon (approximate, scales to ~0.8)
     
     # Handle multi-dimensional tensors (e.g., Conv2D kernels)
     original_shape = G.shape
@@ -101,6 +101,12 @@ def quintic_newton_schulz(G, steps=5, eps=1e-7):
         
         # Update: X_{k+1} = aX + bAX + cA^2X
         X = a * X + b * BX + c * CX
+        
+    # Post-conditioning: Re-normalize to ensure we don't shrink
+    # The coefficients sum to ~0.7, so we lose scale.
+    # We force the Frobenius norm back to sqrt(N) (spectral norm ~ 1)
+    norm = X.norm(p='fro') + eps
+    X = X.div(norm).mul_(math.sqrt(X.size(0)))
     
     # Restore orientation if transposed
     if transpose_needed:
