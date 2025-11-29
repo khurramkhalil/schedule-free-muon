@@ -15,7 +15,7 @@ class ModelConfig:
 class TrainConfig:
     batch_size: int = 12
     # block_size moved to ModelConfig
-    max_steps: int = 1000   # Short run for validation
+    max_steps: int = 10000   # Short run for validation
     learning_rate: float = 6e-4
     weight_decay: float = 1e-1
     beta1: float = 0.9

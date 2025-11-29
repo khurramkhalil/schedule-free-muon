@@ -16,21 +16,21 @@ def run_experiment():
     train_loader = get_data(m_conf.block_size, t_conf.batch_size, t_conf.device, split='train')
     val_loader = get_data(m_conf.block_size, t_conf.batch_size, t_conf.device, split='val')
     
-    # --- Run 1: AdamW ---
-    print("\n=== Training with AdamW ===")
-    torch.manual_seed(42)  # Set seed
-    model_adam = GPT(m_conf)
-    optim_groups = model_adam.configure_optimizers(
-        t_conf.weight_decay, t_conf.learning_rate, 
-        (t_conf.beta1, t_conf.beta2), t_conf.device
-    )
-    optimizer_adam = torch.optim.AdamW(
-        optim_groups, lr=t_conf.learning_rate, 
-        betas=(t_conf.beta1, t_conf.beta2)
-    )
+    # # --- Run 1: AdamW ---
+    # print("\n=== Training with AdamW ===")
+    # torch.manual_seed(42)  # Set seed
+    # model_adam = GPT(m_conf)
+    # optim_groups = model_adam.configure_optimizers(
+    #     t_conf.weight_decay, t_conf.learning_rate, 
+    #     (t_conf.beta1, t_conf.beta2), t_conf.device
+    # )
+    # optimizer_adam = torch.optim.AdamW(
+    #     optim_groups, lr=t_conf.learning_rate, 
+    #     betas=(t_conf.beta1, t_conf.beta2)
+    # )
     
-    trainer_adam = Trainer(model_adam, optimizer_adam, train_loader, val_loader, t_conf)
-    trainer_adam.train('adamw_run')
+    # trainer_adam = Trainer(model_adam, optimizer_adam, train_loader, val_loader, t_conf)
+    # trainer_adam.train('adamw_run')
     
     # --- Run 2: SF-Muon ---
     print("\n=== Training with SF-Muon ===")
