@@ -57,8 +57,8 @@ def quintic_newton_schulz(G, steps=5, eps=1e-7):
     """
     # Quintic coefficients for strict orthogonality (sum=1)
     # Derived for 3rd order convergence to I: f(1)=1, f'(1)=0, f''(1)=0
-    # a, b, c = 1.875, -1.25, 0.375        # Strict (converges to I)
-    a, b, c = 3.4445, -4.7750, 2.0315  # Original Muon (approximate, scales to ~0.8)
+    a, b, c = 1.875, -1.25, 0.375        # Strict (converges to I)
+    # a, b, c = 3.4445, -4.7750, 2.0315  # Original Muon (approximate, scales to ~0.8)
     
     # Handle multi-dimensional tensors (e.g., Conv2D kernels)
     original_shape = G.shape
@@ -82,9 +82,11 @@ def quintic_newton_schulz(G, steps=5, eps=1e-7):
     
     # Pre-conditioning: Scale to ensure convergence
     # Newton-Schulz converges if spectral norm ||X||_2 < sqrt(3)
-    # Using Frobenius norm as conservative upper bound ensures stability
+    # We scale Frobenius norm to sqrt(N)/2 to ensure spectral norm < sqrt(3)
+    # (assuming sigma_max <= 2*sigma_avg for typical matrices)
     norm = X.norm(p='fro') + eps
-    X = X.div(norm)
+    target_pre_norm = 0.5 * math.sqrt(X.size(0))
+    X = X.div(norm).mul_(target_pre_norm)
     
     # Quintic iteration
     for _ in range(steps):
@@ -106,7 +108,6 @@ def quintic_newton_schulz(G, steps=5, eps=1e-7):
         X = a * X + b * BX + c * CX
         
     # Post-conditioning: Re-normalize to ensure we don't shrink
-    # The coefficients sum to ~0.7, so we lose scale.
     # We force the Frobenius norm back to sqrt(N) (spectral norm ~ 1)
     current_norm = X.norm(p='fro') + eps
     target_norm = math.sqrt(X.size(0))
@@ -305,10 +306,12 @@ class ScheduleFreeMuon(optim.Optimizer):
                         
                     z.add_(g_ortho, alpha=-lr * scale)
                     
-                    # Periodic anchor stabilization (drift correction)
-                    # Prevents z from wandering too far from manifold
-                    if state['step'] % 10 == 0:
-                        z.copy_(quintic_newton_schulz(z, steps=1))
+                # Periodic anchor stabilization (drift correction)
+                # Prevents z from wandering too far from manifold
+                if state['step'] % 10 == 0:
+                    z.copy_(quintic_newton_schulz(z, steps=1))
+                    # Also project y to prevent shrinkage from averaging
+                    y.copy_(quintic_newton_schulz(y, steps=1))
                 
                 # ============================================================
                 # MERGE: SCHEDULE-FREE AVERAGING
@@ -331,7 +334,9 @@ class ScheduleFreeMuon(optim.Optimizer):
                 # This ensures gradients in next iteration are computed at
                 # a valid point on the Stiefel manifold
                 if p.ndim >= 2:
-                    p.data.copy_(quintic_newton_schulz(p.data, steps=1))
+                    # Use 5 steps to ensure we are firmly on the manifold
+                    # 1 step might be insufficient if y has shrunk significantly
+                    p.data.copy_(quintic_newton_schulz(p.data, steps=5))
             
             # Increment global step counter
             group['k'] += 1
