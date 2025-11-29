@@ -62,9 +62,13 @@ def quintic_newton_schulz(G, steps=5, eps=1e-7):
     
     # Handle multi-dimensional tensors (e.g., Conv2D kernels)
     original_shape = G.shape
+    original_dtype = G.dtype
     if G.ndim > 2:
         # Flatten: (Out, In, H, W) -> (Out, In*H*W)
         G = G.view(G.size(0), -1)
+    
+    # Enforce float32 for stability
+    G = G.to(torch.float32)
     
     M, N = G.shape
     
@@ -112,8 +116,8 @@ def quintic_newton_schulz(G, steps=5, eps=1e-7):
     if transpose_needed:
         X = X.T
     
-    # Restore original shape
-    return X.view(original_shape)
+    # Restore original shape and dtype
+    return X.view(original_shape).to(original_dtype)
 
 
 class ScheduleFreeMuon(optim.Optimizer):
