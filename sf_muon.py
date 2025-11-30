@@ -294,22 +294,46 @@ class ScheduleFreeMuon(optim.Optimizer):
                     buf = state['momentum_buffer']
                     buf.mul_(momentum).add_(grad)
                     
-                    # Orthogonalize MOMENTUM BUFFER (spectral preconditioning)
-                    # This is the core Muon innovation: orthogonalize the accumulated direction
-                    if HAS_TRITON and grad.device.type == 'cuda':
-                        g_ortho = quintic_newton_schulz_compiled(buf, steps=5)
-                    else:
-                        g_ortho = quintic_newton_schulz(buf, steps=5)
+                    # # Orthogonalize MOMENTUM BUFFER (spectral preconditioning)
+                    # # This is the core Muon innovation: orthogonalize the accumulated direction
+                    # if HAS_TRITON and grad.device.type == 'cuda':
+                    #     g_ortho = quintic_newton_schulz_compiled(buf, steps=5)
+                    # else:
+                    #     g_ortho = quintic_newton_schulz(buf, steps=5)
                     
-                    # Update anchor z with orthogonal update
-                    # Note: z drifts in ambient Euclidean space
-                    if grad.size(-2) > grad.size(-1): # Tall matrix
-                        scale = (grad.size(-2) / grad.size(-1)) ** 0.5
-                    else:
-                        scale = 1.0
+                    # # Update anchor z with orthogonal update
+                    # # Note: z drifts in ambient Euclidean space
+                    # if grad.size(-2) > grad.size(-1): # Tall matrix
+                    #     scale = (grad.size(-2) / grad.size(-1)) ** 0.5
+                    # else:
+                    #     scale = 1.0
                         
-                    z.add_(g_ortho, alpha=-current_lr * scale)
-                    
+                    # z.add_(g_ortho, alpha=-current_lr * scale)
+
+                    z.add_(buf, alpha=-lr)
+                    # Then project z to manifold
+                    z.copy_(quintic_newton_schulz(z, steps=1))
+                    # In step() method, after gradient orthogonalization
+                    if state['step'] % 100 == 0 and p.ndim >= 2:
+                        # Log 1: Gradient alignment
+                        grad_norm = grad.norm().item()
+                        ortho_grad_norm = g_ortho.norm().item()
+                        alignment = (grad * g_ortho).sum().item() / (grad_norm * ortho_grad_norm + 1e-8)
+                        print(f"Step {state['step']}: Grad alignment: {alignment:.4f}, "
+                            f"Norm change: {grad_norm:.4f} -> {ortho_grad_norm:.4f}")
+                        
+                        # Log 2: Spectral error of z vs y
+                        z_error = get_spectral_error(z)
+                        y_error = get_spectral_error(y)
+                        print(f"  Spectral: z={z_error:.4f}, y={y_error:.4f}")
+                        
+                        # Log 3: Weight update magnitude
+                        update_norm = (current_lr * scale * g_ortho.norm()).item()
+                        weight_norm = z.norm().item()
+                        print(f"  Update ratio: {update_norm/weight_norm:.6f}")
+
+
+
                     # Periodic anchor stabilization (drift correction)
                     # Prevents z from wandering too far from manifold
                     if state['step'] % 10 == 0:
