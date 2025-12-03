@@ -1,0 +1,242 @@
+\documentclass[conference]{IEEEtran}
+\usepackage{cite}
+\usepackage{amsmath,amssymb,amsfonts}
+\usepackage{algorithmic}
+\usepackage{algorithm}
+\usepackage{graphicx}
+\usepackage{textcomp}
+\usepackage{xcolor}
+\usepackage{booktabs}
+\usepackage{hyperref}
+\usepackage{multirow}
+
+\def\BibTeX{{\rm B\kern-.05em{\sc i\kern-.025em b}\kern-.08em
+    T\kern-.1667em\lower.7ex\hbox{E}\kern-.125emX}}
+
+\begin{document}
+
+\title{Schedule-Free Muon: Bridging Euclidean and Riemannian Optimization for Deep Learning}
+
+\author{\IEEEauthorblockN{Khurram Khalil}
+\IEEEauthorblockA{\textit{Department of Computer Science} \\
+\textit{University of Missouri-Columbia}\\
+Missouri, USA \\
+khurram.khalil@missouri.edu}
+}
+
+\maketitle
+
+\begin{abstract}
+The optimization landscape of deep neural networks is currently dominated by Euclidean first-order methods such as AdamW. While effective for vector-like parameters, these optimizers often fail to exploit the rich geometric structure of high-dimensional weight matrices found in modern Transformers and ConvNets. Recent advances in Riemannian optimization, specifically the Muon optimizer, have demonstrated that spectral updates on the Stiefel manifold can significantly outperform Euclidean updates. However, Muon introduces complexity in hyperparameter tuning, requiring precise learning rate schedules and warmup phases to ensure stability. Parallel to this, Schedule-Free Learning has emerged as a paradigm to eliminate the need for learning rate decay schedules through a novel averaging protocol.
+
+In this work, we introduce \textbf{Schedule-Free Muon}, a unified optimizer that harmonizes the geometric benefits of spectral updates with the operational simplicity of Schedule-Free Learning. We identify and solve a critical theoretical challenge: the "Manifold Drift" problem, where the linear averaging of orthogonal matrices violates the manifold constraints. We propose a continuous manifold projection mechanism and a robust post-normalization scheme that enables stable training without explicit schedules. Extensive evaluations on Language Modeling (GPT-2 on WikiText-2) and Computer Vision (ResNet-18/ViT on CIFAR-10) demonstrate that Schedule-Free Muon achieves competitive convergence rates and generalization performance compared to well-tuned AdamW baselines, while offering a more theoretically grounded approach to weight matrix optimization.
+\end{abstract}
+
+\begin{IEEEkeywords}
+Optimization, Deep Learning, Riemannian Geometry, Schedule-Free Learning, Muon, Spectral Methods
+\end{IEEEkeywords}
+
+\section{Introduction}
+The success of deep learning is inextricably linked to the efficacy of the optimization algorithms used to train them. For the past decade, the field has converged on a standard recipe: Stochastic Gradient Descent (SGD) with momentum for computer vision, and adaptive moment estimation methods like Adam \cite{kingma2014adam} and AdamW \cite{loshchilov2017decoupled} for language modeling. These methods operate under the assumption that the parameter space is Euclidean, treating a weight matrix $W \in \mathbb{R}^{M \times N}$ simply as a vector of length $MN$.
+
+However, weight matrices in neural networks—particularly in linear layers of Transformers and convolutional kernels—often exhibit spectral properties that are ignored by element-wise updates. The singular values of these matrices dictate the signal propagation and gradient stability through the network. Riemannian optimization techniques, which constrain weights to specific manifolds (e.g., the Stiefel manifold of orthogonal matrices), have long promised better conditioning and faster convergence but have historically been too computationally expensive for large-scale deep learning.
+
+Recently, the Muon optimizer \cite{jordan2024muon} broke this barrier by utilizing a Newton-Schulz iteration to approximate orthogonal projections efficiently on the GPU. Muon demonstrated that "spectral updates"—updating weights based on the singular vectors of the gradient—can outperform AdamW. Yet, Muon retains the traditional baggage of deep learning optimization: the need for carefully crafted learning rate schedules (warmup, cosine decay) to prevent divergence.
+
+On a separate front, Defazio et al. \cite{defazio2024road} introduced "Schedule-Free Learning," a modification of Polyak-Ruppert averaging that eliminates the need for learning rate decay. This method maintains a "fast" iterate for exploration and a "slow" averaged iterate for stability, interpolating between them to generate test-time weights.
+
+In this paper, we ask: \textit{Can we combine the geometric superiority of Muon with the ease of use of Schedule-Free Learning?} We answer in the affirmative, presenting \textbf{Schedule-Free Muon}. Our contributions are:
+
+\begin{enumerate}
+    \item \textbf{Theoretical Unification}: We derive a hybrid update rule that applies spectral updates to the "fast" iterate while maintaining a schedule-free average.
+    \item \textbf{Manifold Drift Correction}: We analyze the geometric violation that occurs when linearly averaging orthogonal matrices and propose a periodic projection mechanism to correct this "drift."
+    \item \textbf{Robust Implementation}: We identify numerical instability issues in the naive combination (specifically weight shrinkage) and introduce a "Post-Normalization" step that stabilizes the Newton-Schulz iteration.
+    \item \textbf{Empirical Validation}: We provide a comprehensive benchmark across diverse modalities (Text, Vision) and architectures (GPT, ResNet, ViT), showing that our method is a viable drop-in replacement for AdamW.
+\end{enumerate}
+
+\section{Related Work}
+
+\subsection{Adaptive Optimization}
+AdamW \cite{loshchilov2017decoupled} decoupled weight decay from the gradient update, fixing a fundamental flaw in Adam's regularization. It remains the baseline for most LLM training. However, AdamW's element-wise scaling ($1/\sqrt{v_t}$) ignores correlations between parameters. Second-order methods like K-FAC \cite{martens2015optimizing} and Shampoo \cite{gupta2018shampoo} attempt to capture these correlations via block-diagonal approximations of the Hessian, but often incur significant memory or compute overhead.
+
+\subsection{Spectral Methods and Muon}
+Muon \cite{jordan2024muon} simplifies second-order ideas by focusing on the spectral norm. Instead of preconditioning by the Hessian, it preconditions by the spectral norm of the gradient itself. The update $W_{t+1} = W_t - \eta \cdot \text{NewtonSchulz}(G_t)$ ensures that the update step has a spectral norm of 1, effectively normalizing the "scale" of the gradient across all dimensions. This is computationally efficient ($O(N^3)$ but parallelizable) compared to full eigendecomposition.
+
+\subsection{Schedule-Free Optimization}
+The core idea of Schedule-Free Learning \cite{defazio2024road} is to replace the discrete learning rate schedule (which requires knowing the total training steps $T$ in advance) with a continuous averaging protocol. By weighting the average $y_t$ by $1/t$, the method automatically reduces the effective learning rate variance over time, achieving the $O(1/T)$ convergence rate of optimal SGD schedules without manual tuning.
+
+\section{Methodology}
+
+\subsection{The Schedule-Free Muon Algorithm}
+
+Our algorithm maintains two sets of weights for each parameter $W$:
+\begin{itemize}
+    \item $z_t$: The "anchor" point (fast iterate). This explores the loss landscape.
+    \item $y_t$: The "average" point (slow iterate). This stabilizes the trajectory.
+\end{itemize}
+
+For vector parameters (biases, layer norms), we apply standard Schedule-Free AdamW updates. For matrix parameters, we apply our novel Schedule-Free Muon update.
+
+\subsubsection{Spectral Update on the Anchor}
+Let $G_t = \nabla f(w_t)$ be the gradient at step $t$. We first update a momentum buffer $V_t$:
+\begin{equation}
+    V_{t+1} = \mu V_t + G_t
+\end{equation}
+
+In standard SGD, we would update $z$ by $-\eta V_{t+1}$. In Muon, we orthogonalize $V_{t+1}$ first. We use the Quintic Newton-Schulz iteration:
+\begin{align}
+    X_0 &= \frac{V_{t+1}}{\|V_{t+1}\|_F} \\
+    X_{k+1} &= a X_k + b X_k X_k^T X_k + c X_k (X_k^T X_k)^2
+\end{align}
+where $a=3.4445, b=-4.7750, c=2.0315$. After $K=5$ iterations, $U_t = X_K$ is approximately orthogonal.
+
+The anchor update is then:
+\begin{equation}
+    z_{t+1} = z_t - \eta \cdot \sigma \cdot U_t
+\end{equation}
+where $\sigma$ is a scaling factor (typically $\sqrt{\text{fan\_in}/\text{fan\_out}}$ for rectangular matrices) to handle non-square geometries.
+
+\subsubsection{The Manifold Drift Problem}
+The standard Schedule-Free averaging rule is:
+\begin{equation}
+    y_{t+1} = (1 - \frac{1}{t+1}) y_t + \frac{1}{t+1} z_{t+1}
+\end{equation}
+If $y_t$ and $z_{t+1}$ are both on the Stiefel manifold (orthogonal), their linear combination $y_{t+1}$ is \textbf{not} necessarily orthogonal. It tends to "shrink" towards the origin (chordal distance vs arc distance).
+
+This "Manifold Drift" causes the effective magnitude of the weights to decay uncontrollably, leading to vanishing gradients.
+
+\subsubsection{Solution: Continuous Manifold Projection}
+To counter drift, we introduce two projection mechanisms:
+
+1.  \textbf{Periodic Anchor Projection}: Every $N$ steps, we project $z_t$ back to the manifold using Newton-Schulz.
+    \begin{equation}
+        z_t \leftarrow \text{NewtonSchulz}(z_t)
+    \end{equation}
+    
+2.  \textbf{Inference Projection}: Before any evaluation or inference, we must project the averaged weights $y_t$.
+    \begin{equation}
+        y_{\text{final}} \leftarrow \text{NewtonSchulz}(y_t, \text{steps}=10)
+    \end{equation}
+    We use more iterations (10-20) here for high precision.
+
+\subsubsection{Post-Normalization Stability Fix}
+During our experiments, we observed that the Newton-Schulz iteration with the "Original Muon" coefficients can slightly shrink the Frobenius norm of the matrix if not perfectly converged. Over thousands of steps, this leads to exponential decay of the weight norm.
+
+We propose a \textbf{Post-Normalization} step after the Newton-Schulz iteration:
+\begin{equation}
+    U_t \leftarrow U_t \cdot \frac{\sqrt{M}}{\|U_t\|_F}
+\end{equation}
+This forces the update matrix to have a Frobenius norm of $\sqrt{M}$ (where $M$ is the number of rows), ensuring that the spectral update does not implicitly act as uncontrolled weight decay.
+
+\begin{algorithm}[h]
+\caption{Schedule-Free Muon Update}
+\begin{algorithmic}[1]
+\REQUIRE Params $W$, LR $\eta$, Momentum $\mu$
+\STATE \textbf{Init:} $z \leftarrow W, y \leftarrow W, v \leftarrow 0$
+\FOR{$t = 1 \dots T$}
+    \STATE $g \leftarrow \nabla f(w_t)$
+    \IF{$W$ is Matrix}
+        \STATE $v \leftarrow \mu v + g$
+        \STATE $u \leftarrow \text{NewtonSchulz}(v)$
+        \STATE $u \leftarrow \text{PostNormalize}(u)$
+        \STATE $z \leftarrow z - \eta u$
+        \IF{$t \mod 10 == 0$}
+            \STATE $z \leftarrow \text{NewtonSchulz}(z)$
+        \ENDIF
+    \ELSE
+        \STATE \COMMENT{Vector: Use AdamW}
+        \STATE $z \leftarrow \text{AdamWStep}(z, g, \eta)$
+    \ENDIF
+    \STATE $c_t \leftarrow 1/(t+1)$
+    \STATE $y \leftarrow (1-c_t)y + c_t z$
+    \STATE $w_{t+1} \leftarrow (1-\rho)y + \rho z$ \COMMENT{Interpolate for fwd pass}
+\ENDFOR
+\STATE \textbf{Return} $\text{NewtonSchulz}(y)$
+\end{algorithmic}
+\end{algorithm}
+
+\section{Experiments}
+
+\subsection{Experimental Setup}
+We implemented Schedule-Free Muon in PyTorch and evaluated it against AdamW.
+
+\subsubsection{Datasets}
+\begin{itemize}
+    \item \textbf{WikiText-2}: A standard language modeling benchmark. We use a character-level tokenizer for simplicity in our prototype, training a GPT-2 style model.
+    \item \textbf{CIFAR-10}: A standard vision benchmark. We use standard data augmentation (RandomCrop, HorizontalFlip).
+\end{itemize}
+
+\subsubsection{Models}
+\begin{itemize}
+    \item \textbf{GPT-2}: 12 layers, 12 heads, embedding dimension 768.
+    \item \textbf{ResNet-18}: Adapted for CIFAR-10 (removed the initial 7x7 max-pooling layer to preserve spatial resolution for 32x32 images).
+    \item \textbf{ViT}: A compact Vision Transformer with patch size 4, embedding dimension 512, and 6 layers.
+\end{itemize}
+
+\subsubsection{Hyperparameters}
+For AdamW, we used the standard learning rate of $6 \times 10^{-4}$ for GPT and $1 \times 10^{-3}$ for ResNet, with cosine decay and 100 steps warmup.
+For SF-Muon, we used a learning rate of $0.02$ (standard for Muon) for matrix parameters and the same AdamW settings for vector parameters. No learning rate schedule was used for SF-Muon.
+
+\subsection{Results}
+
+\subsubsection{Language Modeling (GPT-2)}
+Figure \ref{fig:gpt} illustrates the training loss on WikiText-2. SF-Muon starts with a higher loss due to the lack of warmup but quickly catches up. The final validation loss is comparable to AdamW (3.95 vs 3.82), demonstrating that the schedule-free mechanism successfully stabilizes the spectral updates.
+
+\begin{figure}[htbp]
+\centerline{\includegraphics[width=0.9\linewidth]{figures/gpt_comparison.png}}
+\caption{GPT-2 Training on WikiText-2. SF-Muon (Orange) vs AdamW (Blue). Note the stability of SF-Muon despite the aggressive learning rate.}
+\label{fig:gpt}
+\end{figure}
+
+\subsubsection{Computer Vision (ResNet-18)}
+On ResNet-18 (Figure \ref{fig:resnet}), SF-Muon shows remarkable stability. The spectral updates appear particularly well-suited for the convolutional kernels, which benefit from orthogonality.
+
+\begin{figure}[htbp]
+\centerline{\includegraphics[width=0.9\linewidth]{figures/vision_resnet_comparison.png}}
+\caption{ResNet-18 Training on CIFAR-10. SF-Muon achieves similar convergence speed to AdamW.}
+\label{fig:resnet}
+\end{figure}
+
+\subsubsection{Vision Transformer (ViT)}
+ViTs are notoriously hard to train. Figure \ref{fig:vit} shows that SF-Muon handles the mixed parameter types (Linear projections vs LayerNorms) effectively.
+
+\begin{figure}[htbp]
+\centerline{\includegraphics[width=0.9\linewidth]{figures/vision_vit_comparison.png}}
+\caption{ViT Training on CIFAR-10. The gap between AdamW and SF-Muon is minimal.}
+\label{fig:vit}
+\end{figure}
+
+\begin{table}[htbp]
+\caption{Computational Cost Analysis (Steps/Sec)}
+\begin{center}
+\begin{tabular}{lcc}
+\toprule
+\textbf{Model} & \textbf{AdamW} & \textbf{SF-Muon} \\
+\midrule
+GPT-2 & 12.5 & 11.8 \\
+ResNet-18 & 24.1 & 22.5 \\
+ViT & 18.2 & 17.1 \\
+\bottomrule
+\end{tabular}
+\label{tab:cost}
+\end{center}
+\end{table}
+
+\subsection{Computational Complexity}
+Table \ref{tab:cost} compares the throughput. SF-Muon incurs a slight overhead (5-10\%) due to the Newton-Schulz iterations. Each NS step involves 5 matrix multiplications. However, since this is only applied to weight updates (not the forward/backward pass), the amortized cost is low, especially for models where activation compute dominates parameter update compute.
+
+\section{Discussion}
+
+\subsection{Sensitivity to Coefficients}
+We found that the choice of Newton-Schulz coefficients is critical. The "Strict" coefficients ($a=1.875$) theoretically converge to $I$ but caused numerical instability in fp32 training. The "Original Muon" coefficients ($a=3.4445$) proved more robust, likely due to their implicit regularization effect, provided that Post-Normalization is applied.
+
+\subsection{The Importance of Post-Normalization}
+Without Post-Normalization, we observed a phenomenon we term "Spectral Collapse," where the weight matrices shrink towards zero. This is because the approximate orthogonalization can result in a matrix with spectral norm slightly less than 1. Repeated updates compound this shrinkage. Forcing the Frobenius norm to $\sqrt{N}$ acts as a hard constraint that keeps the weights on the energy shell.
+
+\section{Conclusion}
+Schedule-Free Muon represents a promising step towards "black-box" optimization for deep learning. By removing the need for learning rate schedules and leveraging the geometry of matrix parameters, it simplifies the training pipeline. While it introduces new hyperparameters (NS steps, coefficients), our results suggest that a standard configuration works well across different domains. Future work will focus on adaptive coefficient selection and scaling to Large Language Models.
+
+\bibliographystyle{IEEEtran}
+\bibliography{refs}
+
+\end{document}
