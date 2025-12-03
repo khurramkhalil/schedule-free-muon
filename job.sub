@@ -1,0 +1,23 @@
+#!/bin/bash
+#SBATCH --partition=gpu
+#SBATCH -N 1
+#SBATCH -c 64
+#SBATCH --mem 250G
+#SBATCH --gres=gpu:1
+#SBATCH --export=all
+#SBATCH --out=hypothesis3-%j.out
+#SBATCH --output=hypothesis3%J_stdout.txt
+#SBATCH --error=hypothesis-3_%J_stderr.txt
+#SBATCH --time=2:00:00
+#SBATCH --job-name=Hypothesis_Three_%J
+#SBATCH --mail-user=khurram.khalil@missouri.edu
+#SBATCH --mail-type=ALL
+
+module load miniconda3/4.10.3_gcc_9.5.0
+source activate deepseek
+
+# Change to the correct directory and run the spectral experiments
+cd /cluster/VAST/hoquek-lab/schedule-free-muon
+python benchmark_real.py
+
+echo "Hypothesis 3 experiments completed successfully"
