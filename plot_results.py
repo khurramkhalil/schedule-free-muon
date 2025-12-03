@@ -73,22 +73,35 @@ def main():
     os.makedirs('figures', exist_ok=True)
     set_style()
     
-    # Load Data
+    # --- GPT Experiments ---
+    print("Plotting GPT Results...")
     try:
         adam_df = pd.read_csv('logs/adamw_run.csv')
         muon_df = pd.read_csv('logs/sf_muon_run.csv')
-    except FileNotFoundError as e:
-        print(f"Error loading logs: {e}")
-        return
+        plot_run(adam_df, 'AdamW (GPT)', 'tab:blue', 'figures/gpt_adamw_training.png')
+        plot_run(muon_df, 'SF-Muon (GPT)', 'tab:orange', 'figures/gpt_sf_muon_training.png')
+        plot_comparison(adam_df, muon_df, 'figures/gpt_comparison.png')
+    except FileNotFoundError:
+        print("GPT logs not found, skipping.")
 
-    # Plot AdamW
-    plot_run(adam_df, 'AdamW', 'tab:blue', 'figures/adamw_training.png')
+    # --- Vision Experiments ---
+    print("Plotting Vision Results...")
     
-    # Plot SF-Muon
-    plot_run(muon_df, 'SF-Muon', 'tab:orange', 'figures/sf_muon_training.png')
-    
-    # Plot Comparison
-    plot_comparison(adam_df, muon_df, 'figures/comparison.png')
+    # ResNet
+    try:
+        resnet_adam = pd.read_csv('logs/vision_resnet_adamw.csv')
+        resnet_muon = pd.read_csv('logs/vision_resnet_muon.csv')
+        plot_comparison(resnet_adam, resnet_muon, 'figures/vision_resnet_comparison.png')
+    except FileNotFoundError:
+        print("ResNet logs not found, skipping.")
+        
+    # ViT
+    try:
+        vit_adam = pd.read_csv('logs/vision_vit_adamw.csv')
+        vit_muon = pd.read_csv('logs/vision_vit_muon.csv')
+        plot_comparison(vit_adam, vit_muon, 'figures/vision_vit_comparison.png')
+    except FileNotFoundError:
+        print("ViT logs not found, skipping.")
 
 if __name__ == "__main__":
     main()

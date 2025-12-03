@@ -1,0 +1,2 @@
+step,time,train_loss,val_loss,tokens_per_sec
+0,7.593502044677734,2.599776029586792,,51783.221718575034

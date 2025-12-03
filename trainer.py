@@ -4,6 +4,7 @@ import torch.nn.functional as F
 from collections import defaultdict
 import csv
 import os
+import contextlib
 
 class Trainer:
     def __init__(self, model, optimizer, train_loader, val_loader, config):
@@ -46,7 +47,9 @@ class Trainer:
             
             # Forward pass
             self.optimizer.zero_grad()
-            with torch.amp.autocast(device_type='cuda', dtype=torch.bfloat16) if self.device == 'cuda' else torch.no_grad():
+            # Use nullcontext for CPU training to allow gradient tracking
+            ctx = torch.amp.autocast(device_type='cuda', dtype=torch.bfloat16) if self.device == 'cuda' else contextlib.nullcontext()
+            with ctx:
                 logits, loss = self.model(x, y)
             
             # Backward pass
